@@ -1,8 +1,12 @@
 #include "server.hpp"
+#include "config.hpp"
 
 #include <tiny-process-library/process.hpp>
 #include <boost/filesystem.hpp>
+#include <attender/attender/session/session.hpp>
 #include <attender/attender/mounting.hpp>
+#include <attender/attender/session/memory_session_storage.hpp>
+#include <attender/attender/session/uuid_session_cookie_generator.hpp>
 
 #include <thread>
 #include <iostream>
@@ -15,6 +19,7 @@ namespace RemoteBuild
 //#####################################################################################################################
     Server::Server()
         : ctx_{}
+        , sessions_{std::make_unique <memory_session_storage <uuid_generator, session>>()}
         , server_{ctx_.get_io_service(), [](auto* connection, auto const& ec, auto const& exc)
         {
             // some error occured. (this is not thread safe)
@@ -28,6 +33,23 @@ namespace RemoteBuild
         }}
     {
 
+    }
+//---------------------------------------------------------------------------------------------------------------------
+    void Server::loadConfig()
+    {
+        std::ifstream reader("./config.json", std::ios_base::binary);
+        if (reader.good())
+        {
+            auto config = ::loadConfig(reader);
+
+            for (auto const& i : config.projects)
+            {
+                if (i.type == (int)BuildType::batch)
+                    addProject(i.id, i.rootDir, BatchBuild{});
+                else
+                    addProject(i.id, i.rootDir, BashBuild{});
+            }
+        }
     }
 //---------------------------------------------------------------------------------------------------------------------
     void Server::start(std::string const& port)
@@ -45,6 +67,27 @@ namespace RemoteBuild
                 res->send_status(404);
             }
         });
+
+        server_.get("/authenticate", [this](auto req, auto res)
+        {
+            attender::session sess;
+            auto state = sessions_.load_session ("SESS", sess, req);
+            if (state == session_state::live)
+                sessions_.terminate_session(sess);
+
+            auto auth = req->get_header_field("Authorization");
+            if (!auth || auth.get() != "Basic YWRtaW46b21pbm91c19wYXNzd29yZDY0")
+            {
+                res->send_status(403);
+                return;
+            }
+
+            auto newSession = sessions_.make_session <attender::session> ();
+            cookie ck;
+            ck.set_name("SESS").set_value(newSession.id());
+            res->set_cookie(ck);
+            res->send_status(204);
+        });
     }
 //---------------------------------------------------------------------------------------------------------------------
 #define AQUIRE_LOCK(ID) \
@@ -52,6 +95,21 @@ namespace RemoteBuild
     auto& entry = compileStatus_[ID]; \
     guard.unlock(); \
     std::lock_guard <std::mutex> guard2{entry.access}
+
+#define REQUIRE_AUTH() \
+    attender::session sess; \
+    auto state = sessions_.load_session ("SESS", sess, req); \
+    if (state != session_state::live) \
+    { \
+        res->send_status(401); \
+        return; \
+    }
+//---------------------------------------------------------------------------------------------------------------------
+    void Server::clearBuildLog(std::string const& id)
+    {
+        AQUIRE_LOCK(id);
+        entry.log.clear();
+    }
 //---------------------------------------------------------------------------------------------------------------------
     void Server::setBuildRunning(std::string const& id, bool running)
     {
@@ -77,22 +135,41 @@ namespace RemoteBuild
         return entry.log;
     }
 //---------------------------------------------------------------------------------------------------------------------
+    int Server::getExitStatus(std::string const& id)
+    {
+        AQUIRE_LOCK(id);
+        return entry.exitStatus;
+    }
+//---------------------------------------------------------------------------------------------------------------------
     void Server::addProject(std::string const& id, std::string const& rootDir, BuildConfig const& config)
     {
         // get build log
         server_.get("/"s + id + "_log", [this, id](auto req, auto res)
         {
+            REQUIRE_AUTH()
+
             res->type(".txt").send(getBuildLog(id));
         });
 
         server_.get("/"s + id + "_running", [this, id](auto req, auto res)
         {
+            REQUIRE_AUTH()
+
             res->type(".txt").send(std::to_string(isBuildRunning(id)));
+        });
+
+        server_.get("/"s + id + "_exit_status", [this, id](auto req, auto res)
+        {
+            REQUIRE_AUTH()
+
+            res->type(".txt").send(std::to_string(getExitStatus(id)));
         });
 
         // mkdir
         server_.post("/"s + id + "_mkdir", [this, id, rootDir](auto req, auto res)
         {
+            REQUIRE_AUTH()
+
             namespace fs = boost::filesystem;
 
             auto dir = std::make_shared <std::string>();
@@ -131,13 +208,16 @@ namespace RemoteBuild
                 buildThread = std::make_shared <std::thread> ([this, id, buildThread, rootDir, config]() \
                 { \
                     setBuildRunning(id, true); \
+                    clearBuildLog(id); \
                     Process builder(COMMAND, rootDir, [this, id](const char *bytes, size_t n) \
                     { \
                         appendBuildLog(id, {bytes, n}); \
                         std::cout << std::string{bytes, n}; \
                     }, nullptr, true); \
-                    builder.get_exit_status(); \
-                    setBuildRunning(id, false); \
+                    auto exitStatus = builder.get_exit_status(); \
+                    AQUIRE_LOCK(id); \
+                    entry.running = false; \
+                    entry.exitStatus = exitStatus; \
                 }); \
                 buildThread->detach(); \
                 res->send_status(204)
@@ -148,6 +228,8 @@ namespace RemoteBuild
             // issue build
             server_.get("/"s + id + "_build", [this, id, rootDir, config = *static_cast <BashBuild const*> (&config)](auto req, auto res)
             {
+                REQUIRE_AUTH()
+
                 BUILD_BY_SCRIPT("bash "s + rootDir + "/" + config.buildScript + " \"" + rootDir + "\"");
             });
         }
@@ -156,6 +238,8 @@ namespace RemoteBuild
             // issue build
             server_.get("/"s + id + "_build", [this, id, rootDir, config = *static_cast <BatchBuild const*> (&config)](auto req, auto res)
             {
+                REQUIRE_AUTH()
+
                 BUILD_BY_SCRIPT(rootDir + "/" + config.buildScript + " \"" + rootDir + "\"");
             });
         }
@@ -163,8 +247,13 @@ namespace RemoteBuild
             throw std::invalid_argument("unknown build type");
 
         // mount
-        server_.mount(rootDir, "/"s + id, [localOnly = config.localOnly](auto req, auto res)
+        server_.mount(rootDir, "/"s + id, [this, localOnly = config.localOnly](auto req, auto res)
         {
+            attender::session sess;
+            auto state = sessions_.load_session ("SESS", sess, req);
+            if (state != session_state::live)
+                return false;
+
             if (localOnly && req->ip().substr(0, 7) != "192.168")
                 return false;
             return true;

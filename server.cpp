@@ -1,5 +1,6 @@
 #include "server.hpp"
 #include "config.hpp"
+#include <SimpleJSON/utility/base64.hpp>
 
 #include <tiny-process-library/process.hpp>
 #include <boost/filesystem.hpp>
@@ -42,6 +43,10 @@ namespace RemoteBuild
         {
             auto config = ::loadConfig(reader);
 
+            std::stringstream temp;
+            JSON::encodeBase64 <char> (temp, config.user + ":" + config.password);
+            auth64_ = temp.str();
+
             for (auto const& i : config.projects)
             {
                 if (i.type == (int)BuildType::batch)
@@ -76,7 +81,7 @@ namespace RemoteBuild
                 sessions_.terminate_session(sess);
 
             auto auth = req->get_header_field("Authorization");
-            if (!auth || auth.get() != "Basic YWRtaW46b21pbm91c19wYXNzd29yZDY0")
+            if (!auth || auth.get() != "Basic " + auth64_)
             {
                 res->send_status(403);
                 return;

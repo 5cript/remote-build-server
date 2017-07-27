@@ -20,6 +20,8 @@ struct Config : public JSON::Stringifiable <Config>
               , public JSON::Parsable <Config>
 {
     std::vector <ProjectConfig> projects;
+    std::string user;
+    std::string password;
 };
 
 Config loadConfig(std::istream& json);
@@ -34,5 +36,5 @@ BOOST_FUSION_ADAPT_STRUCT
 BOOST_FUSION_ADAPT_STRUCT
 (
     Config,
-    projects
+    projects, user, password
 )

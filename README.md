@@ -3,7 +3,7 @@ DO NOT USE, ITS NOT SAFE.
 
 ## Example config
 
-´´´
+```JSON
 {
 	"config": {
 		"projects": [
@@ -17,8 +17,8 @@ DO NOT USE, ITS NOT SAFE.
 		"password": "admin"
 	}
 }
-´´´
+```
 
 ## Build Types
-0 = bash
-1 = batch
+- 0 = bash
+- 1 = batch

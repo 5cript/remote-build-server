@@ -5,17 +5,17 @@ DO NOT USE, ITS NOT SAFE.
 
 ```JSON
 {
-	"config": {
-		"projects": [
-			{
-				"id": "list-disk",
-				"rootDir": "/home/debian/projects/list-disk",
-				"type": 0
-			}
-		],
-		"user": "admin",
-		"password": "admin"
-	}
+  "config": {
+    "projects": [
+      {
+        "id": "list-disk",
+        "rootDir": "/home/debian/projects/list-disk",
+        "type": 0
+      }
+    ],
+    "user": "admin",
+    "password": "admin"
+  }
 }
 ```
 

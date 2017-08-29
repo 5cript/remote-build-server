@@ -81,6 +81,7 @@ namespace RemoteBuild
                 sessions_.terminate_session(sess);
 
             auto auth = req->get_header_field("Authorization");
+            
             if (!auth || auth.get() != "Basic " + auth64_)
             {
                 res->send_status(403);
@@ -214,11 +215,18 @@ namespace RemoteBuild
                 { \
                     setBuildRunning(id, true); \
                     clearBuildLog(id); \
-                    Process builder(COMMAND, rootDir, [this, id](const char *bytes, size_t n) \
+                    Process builder(COMMAND, rootDir, \
+                    [this, id](const char *bytes, size_t n) /* STDOUT */\
                     { \
                         appendBuildLog(id, {bytes, n}); \
                         std::cout << std::string{bytes, n}; \
-                    }, nullptr, true); \
+                    }, \
+                    [this, id](const char *bytes, size_t n) /* STDERR */\
+                    { \
+                        appendBuildLog(id, {bytes, n}); \
+                        std::cout << std::string{bytes, n}; \
+                    } \
+                    , true); \
                     auto exitStatus = builder.get_exit_status(); \
                     AQUIRE_LOCK(id); \
                     entry.running = false; \

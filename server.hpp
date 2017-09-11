@@ -61,5 +61,6 @@ namespace RemoteBuild
         std::mutex logAccess_;
         std::unordered_map <std::string, BuildStatus> compileStatus_;
         std::string auth64_;
+        int configPort_;
     };
 }

@@ -213,6 +213,9 @@ namespace RemoteBuild
             std::shared_ptr <std::thread> buildThread; \
                 buildThread = std::make_shared <std::thread> ([this, id, buildThread, rootDir, config]() \
                 { \
+                    std::cout << "################################################################\n"; \
+                    std::cout << "#                         BUILD START                          #\n"; \
+                    std::cout << "################################################################\n"; \
                     setBuildRunning(id, true); \
                     clearBuildLog(id); \
                     Process builder(COMMAND, rootDir, \

@@ -32,6 +32,10 @@ namespace RemoteBuild
             }
             std::cerr << ec << " " << exc.what() << "\n";
         }}
+        , logAccess_{}
+        , compileStatus_{}
+        , auth64_{}
+        , configPort_{-1}
     {
 
     }
@@ -47,6 +51,11 @@ namespace RemoteBuild
             JSON::encodeBase64 <char> (temp, config.user + ":" + config.password);
             auth64_ = temp.str();
 
+            if (config.port)
+                configPort_ = config.port.get();
+            else
+                configPort_ = 0;
+
             for (auto const& i : config.projects)
             {
                 if (i.type == (int)BuildType::batch)
@@ -60,7 +69,10 @@ namespace RemoteBuild
     void Server::start(std::string const& port)
     {
         initializeRoutings();
-        server_.start(port);
+        if (configPort_ > 0)
+            server_.start(std::to_string(configPort_));
+        else
+            server_.start(port);
     }
 //---------------------------------------------------------------------------------------------------------------------
     void Server::initializeRoutings()
@@ -81,7 +93,7 @@ namespace RemoteBuild
                 sessions_.terminate_session(sess);
 
             auto auth = req->get_header_field("Authorization");
-            
+
             if (!auth || auth.get() != "Basic " + auth64_)
             {
                 res->send_status(403);

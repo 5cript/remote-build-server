@@ -22,6 +22,7 @@ struct Config : public JSON::Stringifiable <Config>
     std::vector <ProjectConfig> projects;
     std::string user;
     std::string password;
+    boost::optional <int> port;
 };
 
 Config loadConfig(std::istream& json);
@@ -36,5 +37,5 @@ BOOST_FUSION_ADAPT_STRUCT
 BOOST_FUSION_ADAPT_STRUCT
 (
     Config,
-    projects, user, password
+    projects, user, password, port
 )

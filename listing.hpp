@@ -33,7 +33,7 @@ namespace RemoteBuild
      *  @param root Path to recurse through
      *  @param extensionWhiteSelect Will only select files with the given extension. does not filter if empty.
      */
-    DirectoryListing makeListing(std::string const& root, std::string const& extensionWhiteSelect = {});
+    DirectoryListing makeListing(std::string const& root, std::string const& globber = {});
 }
 
 BOOST_FUSION_ADAPT_STRUCT

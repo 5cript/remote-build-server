@@ -193,15 +193,15 @@ namespace RemoteBuild
 
         server_.get("/"s + id + "_listing", [this, id, rootDir](auto req, auto res)
         {
-            //REQUIRE_AUTH()
+            REQUIRE_AUTH()
 
             auto queryOpt = req->query("filter");
-            std::string query{};
+            std::string filter{};
             if (queryOpt)
-                query = queryOpt.get();
+                filter = queryOpt.get();
 
             std::stringstream sstr;
-            JSON::stringify(sstr, "", makeListing(rootDir, query));
+            JSON::stringify(sstr, "", makeListing(rootDir, filter));
             res->type(".json").send(sstr.str());
         });
 

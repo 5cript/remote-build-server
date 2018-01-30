@@ -1,5 +1,12 @@
 #include "server.hpp"
 #include "config.hpp"
+#include "listing.hpp"
+
+#ifndef Q_MOC_RUN // A Qt workaround, for those of you who use Qt
+#   include <SimpleJSON/parse/jsd.hpp>
+#   include <SimpleJSON/stringify/jss.hpp>
+#   include <SimpleJSON/stringify/jss_fusion_adapted_struct.hpp>
+#endif
 #include <SimpleJSON/utility/base64.hpp>
 
 #include <tiny-process-library/process.hpp>
@@ -11,6 +18,7 @@
 
 #include <thread>
 #include <iostream>
+#include <sstream>
 
 namespace RemoteBuild
 {
@@ -181,6 +189,20 @@ namespace RemoteBuild
             REQUIRE_AUTH()
 
             res->type(".txt").send(std::to_string(getExitStatus(id)));
+        });
+
+        server_.get("/"s + id + "_listing", [this, id, rootDir](auto req, auto res)
+        {
+            //REQUIRE_AUTH()
+
+            auto queryOpt = req->query("filter");
+            std::string query{};
+            if (queryOpt)
+                query = queryOpt.get();
+
+            std::stringstream sstr;
+            JSON::stringify(sstr, "", makeListing(rootDir, query));
+            res->type(".json").send(sstr.str());
         });
 
         // mkdir

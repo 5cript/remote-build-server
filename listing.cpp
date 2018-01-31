@@ -30,7 +30,7 @@ namespace RemoteBuild
         return hashString;
     }
 //---------------------------------------------------------------------------------------------------------------------
-    bool checkMask(boost::filesystem::path const& p, std::string const& mask)
+    bool checkMask(std::string const& p, std::string const& mask)
     {
         std::function <bool(const char*, const char*)> match;
 
@@ -64,10 +64,10 @@ namespace RemoteBuild
             return *haystack == '\0';
         };
 
-        return match(mask.c_str(), p.string().c_str());
+        return match(mask.c_str(), p.c_str());
     }
 //#####################################################################################################################
-    DirectoryListing makeListing(std::string const& root, std::string const& globber)
+    DirectoryListing makeListing(std::string const& root, bool directories, std::string const& globber)
     {
         DirectoryListing result;
         result.root = root;
@@ -77,18 +77,27 @@ namespace RemoteBuild
         recursive_directory_iterator iter(root), end;
         for (; iter != end; ++iter)
         {
-            if (!is_regular_file(iter->status()))
+            if (!directories && !is_regular_file(iter->status()))
+                continue;
+            else if (directories && !is_directory(iter->status()))
                 continue;
 
-            if (!globber.empty() && !checkMask(iter->path(), globber))
+            auto entry = relative(iter->path(), root).string();
+            std::replace(entry.begin(), entry.end(), '\\', '/');
+
+            if (!globber.empty() && !checkMask(entry, globber))
                 continue;
 
-            auto file = relative(iter->path(), root).string();
-            std::replace(file.begin(), file.end(), '\\', '/');
-            result.filesWithHash.emplace_back(
-                file,
-                makeHash(iter->path().string())
-            );
+            if (!directories)
+                result.entriesWithHash.emplace_back(
+                    entry,
+                    makeHash(iter->path().string())
+                );
+            else
+                result.entriesWithHash.emplace_back(
+                    entry,
+                    ""
+                );
         }
 
         return result;

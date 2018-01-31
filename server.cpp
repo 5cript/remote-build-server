@@ -104,7 +104,7 @@ namespace RemoteBuild
 
             if (!auth || auth.get() != "Basic " + auth64_)
             {
-                res->send_status(403);
+                res->set("WWW-Authenticate", "Basic").send_status(401);
                 return;
             }
 
@@ -127,7 +127,7 @@ namespace RemoteBuild
     auto state = sessions_.load_session ("SESS", sess, req); \
     if (state != session_state::live) \
     { \
-        res->send_status(401); \
+        res->send_status(403); \
         return; \
     }
 //---------------------------------------------------------------------------------------------------------------------
@@ -193,7 +193,7 @@ namespace RemoteBuild
 
         server_.get("/"s + id + "_listing", [this, id, rootDir](auto req, auto res)
         {
-            REQUIRE_AUTH()
+            //REQUIRE_AUTH()
 
             auto queryOpt = req->query("filter");
             std::string filter{};
@@ -201,7 +201,7 @@ namespace RemoteBuild
                 filter = queryOpt.get();
 
             std::stringstream sstr;
-            JSON::stringify(sstr, "", makeListing(rootDir, filter));
+            JSON::stringify(sstr, "", makeListing(rootDir, static_cast <bool> (req->query("d")), filter));
             res->type(".json").send(sstr.str());
         });
 

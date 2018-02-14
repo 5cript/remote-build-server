@@ -66,10 +66,15 @@ namespace RemoteBuild
 
             for (auto const& i : config.projects)
             {
+                auto root = i.rootDir;
+                if (root.size() >= 2 && root.substr(0, 2) == "./")
+                    root = boost::filesystem::canonical(root).string();
+                std::replace(root.begin(), root.end(), '\\', '/');
+
                 if (i.type == (int)BuildType::batch)
-                    addProject(i.id, i.rootDir, BatchBuild{});
+                    addProject(i.id, root, BatchBuild{i.command});
                 else
-                    addProject(i.id, i.rootDir, BashBuild{});
+                    addProject(i.id, root, BashBuild{i.command});
             }
         }
     }
@@ -174,7 +179,9 @@ namespace RemoteBuild
         {
             REQUIRE_AUTH()
 
-            res->type(".txt").send(getBuildLog(id));
+            auto log = getBuildLog(id);
+            clearBuildLog(id);
+            res->type(".txt").send(log);
         });
 
         server_.get("/"s + id + "_running", [this, id](auto req, auto res)
@@ -243,9 +250,15 @@ namespace RemoteBuild
             );
         });
 
+        #ifdef __WIN32__
+            #define GET_ERROR GetLastError()
+        #else
+            #define GET_ERROR 0
+        #endif // __WIN32__
+
         #define BUILD_BY_SCRIPT(COMMAND) \
             std::shared_ptr <std::thread> buildThread; \
-                buildThread = std::make_shared <std::thread> ([this, id, buildThread, rootDir, config]() \
+                buildThread = std::make_shared <std::thread> ([this, id, buildThread, rootDir, config, commandPrefix]() \
                 { \
                     std::cout << "################################################################\n"; \
                     std::cout << "#                         BUILD START                          #\n"; \
@@ -264,10 +277,16 @@ namespace RemoteBuild
                         std::cout << std::string{bytes, n}; \
                     } \
                     , true); \
+                    int optError = 0;\
+                    if (builder.get_id() == 0) \
+                        optError = GET_ERROR;\
                     auto exitStatus = builder.get_exit_status(); \
                     AQUIRE_LOCK(id); \
                     entry.running = false; \
-                    entry.exitStatus = exitStatus; \
+                    if (builder.get_id() == 0 || optError) \
+                        entry.exitStatus = -1 * optError; \
+                    else \
+                        entry.exitStatus = exitStatus; \
                 }); \
                 buildThread->detach(); \
                 res->send_status(204)
@@ -280,7 +299,11 @@ namespace RemoteBuild
             {
                 REQUIRE_AUTH()
 
-                BUILD_BY_SCRIPT("bash "s + rootDir + "/" + config.buildScript + " \"" + rootDir + "\"");
+                //BUILD_BY_SCRIPT("bash \""s + rootDir + "/" + config.buildScript + "\" \"" + rootDir + "\"");
+                auto commandPrefix = config.command;
+                if (!commandPrefix.empty())
+                    commandPrefix.push_back(' ');
+                BUILD_BY_SCRIPT(commandPrefix + rootDir + "/" + config.buildScript);
             });
         }
         else if (config.type == BuildType::batch)
@@ -290,7 +313,11 @@ namespace RemoteBuild
             {
                 REQUIRE_AUTH()
 
-                BUILD_BY_SCRIPT(rootDir + "/" + config.buildScript + " \"" + rootDir + "\"");
+                using namespace std::string_literals;
+                auto commandPrefix = config.command;
+                if (!commandPrefix.empty())
+                    commandPrefix.push_back(' ');
+                BUILD_BY_SCRIPT(commandPrefix + "\""s + rootDir + "/" + config.buildScript + "\" \"" + rootDir + "\"");
             });
         }
         else

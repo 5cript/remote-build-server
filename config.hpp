@@ -14,6 +14,7 @@ struct ProjectConfig : public JSON::Stringifiable <ProjectConfig>
     std::string id;
     std::string rootDir;
     int type;
+    std::string command;
 };
 
 struct Config : public JSON::Stringifiable <Config>
@@ -31,7 +32,7 @@ void saveConfig(std::ostream& stream, Config const& cfg);
 BOOST_FUSION_ADAPT_STRUCT
 (
     ProjectConfig,
-    rootDir, id, type
+    rootDir, id, type, command
 )
 
 BOOST_FUSION_ADAPT_STRUCT
